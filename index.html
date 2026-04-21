@@ -1,90 +1,136 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Watchlist">
 <title>Watchlist</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#000;color:#fff;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0}
 .header{padding:16px;background:#1c1c1e;position:sticky;top:0;z-index:10;border-bottom:1px solid #38383a}
-.header h1{font-size:34px;font-weight:700;margin-bottom:12px}
-.search-wrap{display:flex;gap:8px}
+.header-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+.header h1{font-size:34px;font-weight:700}
+#lastUpdate{font-size:13px;color:#8e8e93}
+.search-wrap{display:flex;gap:8px;position:relative}
 #search{flex:1;padding:10px 12px;font-size:17px;border:none;border-radius:10px;background:#2c2c2e;color:#fff;outline:none}
 #addBtn{padding:10px 16px;font-size:17px;font-weight:600;border:none;border-radius:10px;background:#0A84FF;color:#fff}
 #addBtn:active{opacity:0.6}
-table{width:100%;border-collapse:collapse}
+#suggestions{position:absolute;top:46px;left:0;right:90px;background:#2c2c2e;border-radius:10px;max-height:200px;overflow-y:auto;z-index:20;display:none}
+.suggestion{padding:12px;border-bottom:1px solid #38383a;font-size:17px}
+.suggestion:last-child{border-bottom:none}
+.suggestion:active{background:#3a3a3c}
+.suggestion span{color:#8e8e93;font-size:15px;margin-left:8px}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:700px}
 thead{position:sticky;top:118px;background:#000;z-index:5}
-th{text-align:left;padding:8px 16px;font-size:13px;font-weight:600;color:#8e8e93;border-bottom:1px solid #38383a}
+th{text-align:left;padding:8px 10px;font-size:11px;font-weight:600;color:#8e8e93;border-bottom:1px solid #38383a;text-transform:uppercase;white-space:nowrap}
 tbody tr{border-bottom:1px solid #38383a;position:relative;overflow:hidden}
-td{padding:12px 16px;font-size:17px;white-space:nowrap}
-.ticker{font-weight:600}
-.price{text-align:right}
-.change{text-align:right;font-weight:600}
+td{padding:10px;white-space:nowrap}
+.ticker{font-weight:600;font-size:15px}
+.price{text-align:right;font-size:15px}
+.change{text-align:right;font-weight:600;font-size:15px}
 .up{color:#30d158}
 .down{color:#ff453a}
 .neutral{color:#8e8e93}
-.high,.low{text-align:right;color:#8e8e93;font-size:15px}
+.small{text-align:right;color:#8e8e93;font-size:13px}
+.startDate{font-size:10px;color:#636366;display:block}
 .row-content{background:#000;display:flex;transition:transform 0.3s ease;position:relative;z-index:2}
 .row-content.swiped{transform:translateX(-80px)}
 .delete-btn{position:absolute;right:0;top:0;bottom:0;width:80px;background:#ff453a;color:#fff;border:none;font-size:17px;font-weight:600;z-index:1}
 .empty{text-align:center;padding:60px 20px;color:#8e8e93;font-size:17px}
 .loading{color:#8e8e93}
+.error{color:#ff453a;text-align:center;padding:20px;font-size:15px}
 </style>
 </head>
 <body>
 <div class="header">
+<div class="header-top">
 <h1>Watchlist</h1>
+<div id="lastUpdate"></div>
+</div>
 <div class="search-wrap">
-<input id="search" type="text" placeholder="Add Ticker" autocapitalize="characters" autocomplete="off">
+<input id="search" type="text" placeholder="Search ticker" autocapitalize="characters" autocomplete="off" autocorrect="off">
 <button id="addBtn">Add</button>
+<div id="suggestions"></div>
 </div>
-</div>
+<div class="table-wrap">
 <table>
-<thead><tr><th>Ticker</th><th style="text-align:right">Price</th><th style="text-align:right">Today</th><th style="text-align:right">52W High</th><th style="text-align:right">52W Low</th></tr></thead>
+<thead><tr><th>Ticker</th><th style="text-align:right">Price</th><th style="text-align:right">Today</th><th style="text-align:right">Start</th><th style="text-align:right">Day H</th><th style="text-align:right">Day L</th><th style="text-align:right">YTD H</th><th style="text-align:right">YTD L</th></tr></thead>
 <tbody id="tbody"></tbody>
 </table>
+</div>
+<div id="error" class="error" style="display:none"></div>
 <script>
 const API_KEY='d7j9m1pr01qp3g1scckgd7j9m1pr01qp3g1sccl0';
 const REFRESH_SEC=15;
-const STORAGE_KEY='watchlist_tickers_v3';
-let tickers=JSON.parse(localStorage.getItem(STORAGE_KEY)||'["AAPL","SPY","MSFT"]');
-let touchStartX=0;let currentSwipe=null;
+const STORAGE_KEY='watchlist_tickers_v6';
+let watchlist=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[{"s":"AAPL"},{"s":"SPY"},{"s":"MSFT"}]');
+let touchStartX=0;let currentSwipe=null;let searchTimeout=null;
 const tbody=document.getElementById('tbody');
 const search=document.getElementById('search');
 const addBtn=document.getElementById('addBtn');
-function save(){localStorage.setItem(STORAGE_KEY,JSON.stringify(tickers))}
+const errorDiv=document.getElementById('error');
+const suggestions=document.getElementById('suggestions');
+const lastUpdate=document.getElementById('lastUpdate');
+function save(){localStorage.setItem(STORAGE_KEY,JSON.stringify(watchlist))}
 function formatNum(n){if(n===null||n===undefined)return'-';return n>=1000?n.toLocaleString('en-US',{maximumFractionDigits:2}):n.toFixed(2)}
 function formatPct(n){if(n===null||n===undefined)return'-';const sign=n>0?'+':'';return sign+n.toFixed(2)+'%'}
-async function fetchData(symbol){
+function formatDate(ts){if(!ts)return'';const d=new Date(ts);return `${d.getMonth()+1}/${d.getDate()}`}
+function formatTime(){const d=new Date();return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit'})}
+function showError(msg){errorDiv.textContent=msg;errorDiv.style.display='block';setTimeout(()=>errorDiv.style.display='none',3000)}
+function updateTime(){lastUpdate.textContent=`Updated ${formatTime()}`}
+async function fetchData(item){
 try{
 const[quote,metric]=await Promise.all([
-fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${API_KEY}`).then(r=>r.json()),
-fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${API_KEY}`).then(r=>r.json())
+fetch(`https://finnhub.io/api/v1/quote?symbol=${item.s}&token=${API_KEY}`).then(r=>r.json()),
+fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${item.s}&metric=all&token=${API_KEY}`).then(r=>r.json())
 ]);
-return{symbol,price:quote.c,change:quote.dp,high52:metric.metric?.['52WeekHigh']||null,low52:metric.metric?.['52WeekLow']||null}
-}catch(e){return{symbol,price:null,change:null,high52:null,low52:null}}
+if(quote.error||quote.c===0)throw new Error('Invalid');
+const m=metric.metric||{};
+return{...item,price:quote.c,change:quote.dp,dayH:quote.h,dayL:quote.l,ytdH:m['52WeekHigh']||null,ytdL:m['52WeekLow']||null}
+}catch(e){
+return{...item,price:null,change:null,dayH:null,dayL:null,ytdH:null,ytdL:null,error:true}
 }
+}
+async function searchTickers(q){
+if(q.length<2){suggestions.style.display='none';return}
+try{
+const res=await fetch(`https://finnhub.io/api/v1/search?q=${q}&token=${API_KEY}`);
+const data=await res.json();
+if(!data.result||!data.result.length){suggestions.style.display='none';return}
+suggestions.innerHTML=data.result.slice(0,5).map(r=>`<div class="suggestion" onclick="selectSuggestion('${r.symbol}')">${r.symbol}<span>${r.description||''}</span></div>`).join('');
+suggestions.style.display='block';
+}catch(e){suggestions.style.display='none'}
+}
+function selectSuggestion(sym){search.value=sym;suggestions.style.display='none';addTicker()}
 function renderRow(d){
+if(d.error)return `<tr><td colspan="8" class="error">Failed to load ${d.s}</td></tr>`;
 const cls=d.change>0?'up':d.change<0?'down':'neutral';
-return`<tr data-ticker="${d.symbol}"><td colspan="5" style="padding:0;position:relative;"><button class="delete-btn" onclick="removeTicker('${d.symbol}')">Delete</button><div class="row-content" ontouchstart="touchStart(event)" ontouchmove="touchMove(event)" ontouchend="touchEnd(event)"><table style="width:100%;border-collapse:collapse;"><tr><td class="ticker">${d.symbol}</td><td class="price ${d.price?'':'loading'}">${d.price?'$'+formatNum(d.price):'...'}</td><td class="change ${cls}">${formatPct(d.change)}</td><td class="high">${d.high52?'$'+formatNum(d.high52):'-'}</td><td class="low">${d.low52?'$'+formatNum(d.low52):'-'}</td></tr></table></div></td></tr>`
+const startPrice=d.sp?formatNum(d.sp):'-';
+const startDate=d.sd?formatDate(d.sd):'';
+return`<tr data-ticker="${d.s}"><td colspan="8" style="padding:0;position:relative;"><button class="delete-btn" onclick="removeTicker('${d.s}')">Delete</button><div class="row-content" ontouchstart="touchStart(event)" ontouchmove="touchMove(event)" ontouchend="touchEnd(event)"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:700px"><tr><td class="ticker">${d.s}</td><td class="price ${d.price?'':'loading'}">${d.price?'$'+formatNum(d.price):'...'}</td><td class="change ${cls}">${formatPct(d.change)}</td><td class="small">$${startPrice}<span class="startDate">${startDate}</span></td><td class="small">${d.dayH?'$'+formatNum(d.dayH):'-'}</td><td class="small">${d.dayL?'$'+formatNum(d.dayL):'-'}</td><td class="small">${d.ytdH?'$'+formatNum(d.ytdH):'-'}</td><td class="small">${d.ytdL?'$'+formatNum(d.ytdL):'-'}</td></tr></table></div></td></tr>`
 }
 async function refresh(){
-if(!tickers.length){tbody.innerHTML='<tr><td colspan="5" class="empty">Add a ticker to start</td></tr>';return}
-const data=await Promise.all(tickers.map(fetchData));
-tbody.innerHTML=data.map(renderRow).join('')
+if(!watchlist.length){tbody.innerHTML='<tr><td colspan="8" class="empty">Add a ticker to start</td></tr>';return}
+const data=await Promise.all(watchlist.map(fetchData));
+tbody.innerHTML=data.map(renderRow).join('');
+updateTime()
 }
-function addTicker(){
+async function addTicker(){
 const sym=search.value.trim().toUpperCase();
 if(!sym)return;
-if(tickers.includes(sym)){search.value='';return}
-tickers.push(sym);save();search.value='';refresh()
+if(watchlist.find(w=>w.s===sym)){search.value='';suggestions.style.display='none';showError(sym+' already in watchlist');return}
+search.disabled=true;addBtn.disabled=true;addBtn.textContent='...';
+const test=await fetchData({s:sym});
+search.disabled=false;addBtn.disabled=false;addBtn.textContent='Add';
+if(test.error||!test.price){showError('Invalid ticker: '+sym);return}
+watchlist.push({s:sym,sp:test.price,sd:Date.now()});save();search.value='';suggestions.style.display='none';refresh()
 }
 function removeTicker(sym){
-tickers=tickers.filter(t=>t!==sym);save();refresh()
+watchlist=watchlist.filter(w=>w.s!==sym);save();refresh()
 }
 function touchStart(e){
 if(currentSwipe&&currentSwipe!==e.currentTarget){currentSwipe.classList.remove('swiped')}
@@ -99,11 +145,17 @@ else if(diff<-20){currentSwipe.classList.remove('swiped')}
 function touchEnd(e){touchStartX=0}
 document.addEventListener('click',(e)=>{
 if(currentSwipe&&!currentSwipe.contains(e.target)){currentSwipe.classList.remove('swiped');currentSwipe=null}
+if(!search.contains(e.target)&&!suggestions.contains(e.target)){suggestions.style.display='none'}
 });
+search.oninput=e=>{
+clearTimeout(searchTimeout);
+searchTimeout=setTimeout(()=>searchTickers(e.target.value.trim()),300)
+};
 addBtn.onclick=addTicker;
-search.onkeydown=e=>{if(e.key==='Enter')addTicker()};
-refresh();
+search.onkeydown=e=>{if(e.key==='Enter'){suggestions.style.display='none';addTicker()}};
+(async()=>{for(let i=0;i<watchlist.length;i++){if(!watchlist[i].sp){const d=await fetchData(watchlist[i]);if(d.price){watchlist[i].sp=d.price;watchlist[i].sd=Date.now()}}}save();refresh()})();
 setInterval(refresh,REFRESH_SEC*1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
 </script>
 </body>
 </html>
