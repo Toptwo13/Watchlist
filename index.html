@@ -24,19 +24,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#000;col
 .suggestion:active{background:#3a3a3c}
 .suggestion span{color:#8e8e93;font-size:15px;margin-left:8px}
 .table-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:14px;min-width:700px}
+table{width:100%;border-collapse:collapse;font-size:15px;min-width:600px}
 thead{position:sticky;top:118px;background:#000;z-index:5}
-th{text-align:left;padding:8px 10px;font-size:11px;font-weight:600;color:#8e8e93;border-bottom:1px solid #38383a;text-transform:uppercase;white-space:nowrap}
+th{text-align:left;padding:8px 12px;font-size:12px;font-weight:600;color:#8e8e93;border-bottom:1px solid #38383a;text-transform:uppercase;white-space:nowrap}
 tbody tr{border-bottom:1px solid #38383a;position:relative;overflow:hidden}
-td{padding:10px;white-space:nowrap}
-.ticker{font-weight:600;font-size:15px}
-.price{text-align:right;font-size:15px}
-.change{text-align:right;font-weight:600;font-size:15px}
+td{padding:12px;white-space:nowrap}
+.ticker{font-weight:600;font-size:16px}
+.price{text-align:right}
+.change{text-align:right;font-weight:600}
 .up{color:#30d158}
 .down{color:#ff453a}
 .neutral{color:#8e8e93}
-.small{text-align:right;color:#8e8e93;font-size:13px}
-.startDate{font-size:10px;color:#636366;display:block}
+.small{text-align:right;color:#8e8e93;font-size:14px}
+.startDate{font-size:11px;color:#636366;display:block}
 .row-content{background:#000;display:flex;transition:transform 0.3s ease;position:relative;z-index:2}
 .row-content.swiped{transform:translateX(-80px)}
 .delete-btn{position:absolute;right:0;top:0;bottom:0;width:80px;background:#ff453a;color:#fff;border:none;font-size:17px;font-weight:600;z-index:1}
@@ -58,15 +58,15 @@ td{padding:10px;white-space:nowrap}
 </div>
 <div class="table-wrap">
 <table>
-<thead><tr><th>Ticker</th><th style="text-align:right">Price</th><th style="text-align:right">Today</th><th style="text-align:right">Start</th><th style="text-align:right">Day H</th><th style="text-align:right">Day L</th><th style="text-align:right">YTD H</th><th style="text-align:right">YTD L</th></tr></thead>
+<thead><tr><th>Ticker</th><th style="text-align:right">Price</th><th style="text-align:right">Today</th><th style="text-align:right">Start</th><th style="text-align:right">Day High</th><th style="text-align:right">Day Low</th></tr></thead>
 <tbody id="tbody"></tbody>
 </table>
 </div>
 <div id="error" class="error" style="display:none"></div>
 <script>
 const API_KEY='d7j9m1pr01qp3g1scckgd7j9m1pr01qp3g1sccl0';
-const REFRESH_SEC=15;
-const STORAGE_KEY='watchlist_tickers_v6';
+const REFRESH_SEC=20;
+const STORAGE_KEY='watchlist_tickers_v7';
 let watchlist=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[{"s":"AAPL"},{"s":"SPY"},{"s":"MSFT"}]');
 let touchStartX=0;let currentSwipe=null;let searchTimeout=null;
 const tbody=document.getElementById('tbody');
@@ -76,7 +76,7 @@ const errorDiv=document.getElementById('error');
 const suggestions=document.getElementById('suggestions');
 const lastUpdate=document.getElementById('lastUpdate');
 function save(){localStorage.setItem(STORAGE_KEY,JSON.stringify(watchlist))}
-function formatNum(n){if(n===null||n===undefined)return'-';return n>=1000?n.toLocaleString('en-US',{maximumFractionDigits:2}):n.toFixed(2)}
+function formatNum(n){if(n===null||n===undefined||n===0)return'-';return n>=1000?n.toLocaleString('en-US',{maximumFractionDigits:2}):n.toFixed(2)}
 function formatPct(n){if(n===null||n===undefined)return'-';const sign=n>0?'+':'';return sign+n.toFixed(2)+'%'}
 function formatDate(ts){if(!ts)return'';const d=new Date(ts);return `${d.getMonth()+1}/${d.getDate()}`}
 function formatTime(){const d=new Date();return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',second:'2-digit'})}
@@ -84,15 +84,13 @@ function showError(msg){errorDiv.textContent=msg;errorDiv.style.display='block';
 function updateTime(){lastUpdate.textContent=`Updated ${formatTime()}`}
 async function fetchData(item){
 try{
-const[quote,metric]=await Promise.all([
-fetch(`https://finnhub.io/api/v1/quote?symbol=${item.s}&token=${API_KEY}`).then(r=>r.json()),
-fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${item.s}&metric=all&token=${API_KEY}`).then(r=>r.json())
-]);
-if(quote.error||quote.c===0)throw new Error('Invalid');
-const m=metric.metric||{};
-return{...item,price:quote.c,change:quote.dp,dayH:quote.h,dayL:quote.l,ytdH:m['52WeekHigh']||null,ytdL:m['52WeekLow']||null}
+const res=await fetch(`https://finnhub.io/api/v1/quote?symbol=${item.s}&token=${API_KEY}`);
+const q=await res.json();
+if(!q||q.c===0||q.c===null)throw new Error('No data');
+return{...item,price:q.c,change:q.dp,dayH:q.h,dayL:q.l}
 }catch(e){
-return{...item,price:null,change:null,dayH:null,dayL:null,ytdH:null,ytdL:null,error:true}
+console.error(item.s,e);
+return{...item,price:null,change:null,dayH:null,dayL:null,error:true}
 }
 }
 async function searchTickers(q){
@@ -107,14 +105,14 @@ suggestions.style.display='block';
 }
 function selectSuggestion(sym){search.value=sym;suggestions.style.display='none';addTicker()}
 function renderRow(d){
-if(d.error)return `<tr><td colspan="8" class="error">Failed to load ${d.s}</td></tr>`;
+if(d.error)return `<tr><td colspan="6" class="error">Failed to load ${d.s} - check symbol</td></tr>`;
 const cls=d.change>0?'up':d.change<0?'down':'neutral';
 const startPrice=d.sp?formatNum(d.sp):'-';
 const startDate=d.sd?formatDate(d.sd):'';
-return`<tr data-ticker="${d.s}"><td colspan="8" style="padding:0;position:relative;"><button class="delete-btn" onclick="removeTicker('${d.s}')">Delete</button><div class="row-content" ontouchstart="touchStart(event)" ontouchmove="touchMove(event)" ontouchend="touchEnd(event)"><table style="width:100%;border-collapse:collapse;font-size:14px;min-width:700px"><tr><td class="ticker">${d.s}</td><td class="price ${d.price?'':'loading'}">${d.price?'$'+formatNum(d.price):'...'}</td><td class="change ${cls}">${formatPct(d.change)}</td><td class="small">$${startPrice}<span class="startDate">${startDate}</span></td><td class="small">${d.dayH?'$'+formatNum(d.dayH):'-'}</td><td class="small">${d.dayL?'$'+formatNum(d.dayL):'-'}</td><td class="small">${d.ytdH?'$'+formatNum(d.ytdH):'-'}</td><td class="small">${d.ytdL?'$'+formatNum(d.ytdL):'-'}</td></tr></table></div></td></tr>`
+return`<tr data-ticker="${d.s}"><td colspan="6" style="padding:0;position:relative;"><button class="delete-btn" onclick="removeTicker('${d.s}')">Delete</button><div class="row-content" ontouchstart="touchStart(event)" ontouchmove="touchMove(event)" ontouchend="touchEnd(event)"><table style="width:100%;border-collapse:collapse;font-size:15px;min-width:600px"><tr><td class="ticker">${d.s}</td><td class="price ${d.price?'':'loading'}">${d.price?'$'+formatNum(d.price):'...'}</td><td class="change ${cls}">${formatPct(d.change)}</td><td class="small">$${startPrice}<span class="startDate">${startDate}</span></td><td class="small">${d.dayH?'$'+formatNum(d.dayH):'-'}</td><td class="small">${d.dayL?'$'+formatNum(d.dayL):'-'}</td></tr></table></div></td></tr>`
 }
 async function refresh(){
-if(!watchlist.length){tbody.innerHTML='<tr><td colspan="8" class="empty">Add a ticker to start</td></tr>';return}
+if(!watchlist.length){tbody.innerHTML='<tr><td colspan="6" class="empty">Add a ticker to start</td></tr>';return}
 const data=await Promise.all(watchlist.map(fetchData));
 tbody.innerHTML=data.map(renderRow).join('');
 updateTime()
@@ -149,7 +147,7 @@ if(!search.contains(e.target)&&!suggestions.contains(e.target)){suggestions.styl
 });
 search.oninput=e=>{
 clearTimeout(searchTimeout);
-searchTimeout=setTimeout(()=>searchTickers(e.target.value.trim()),300)
+searchTimeout=setTimeout(()=>searchTickers(e.target.value.trim()),400)
 };
 addBtn.onclick=addTicker;
 search.onkeydown=e=>{if(e.key==='Enter'){suggestions.style.display='none';addTicker()}};
